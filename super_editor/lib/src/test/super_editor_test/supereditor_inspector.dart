@@ -48,6 +48,18 @@ class SuperEditorInspector {
     return globalCaretOffset - globalToDocumentOffset;
   }
 
+  /// Returns the (x,y) offset for the component which renders the node with the given [nodeId].
+  ///
+  /// {@macro supereditor_finder}
+  static Offset findComponentOffset(String nodeId, Alignment alignment, [Finder? finder]) {
+    final documentLayout = _findDocumentLayout(finder);
+    final component = documentLayout.getComponentByNodeId(nodeId);
+    assert(component != null);
+    final componentBox = component!.context.findRenderObject() as RenderBox;
+    final rect = componentBox.localToGlobal(Offset.zero) & componentBox.size;
+    return alignment.withinRect(rect);
+  }
+
   /// Returns the (x,y) offset for a caret, if that caret appeared at the given [position].
   ///
   /// {@macro supereditor_finder}
@@ -117,6 +129,31 @@ class SuperEditorInspector {
         .single
         .widget as SuperTextWithSelection;
     return superTextWithSelection.richText.style;
+  }
+
+  /// Returns the [DocumentNode] at given the [index].
+  /// 
+  /// The given [index] must be a valid node index inside the [Document].The node at [index] 
+  /// must be of type [NodeType].
+  /// 
+  /// {@macro supereditor_finder}
+  static NodeType getNodeAt<NodeType extends DocumentNode>(int index, [Finder? superEditorFinder]) {
+    final doc = findDocument(superEditorFinder); 
+       
+    if (doc == null) {
+      throw Exception('SuperEditor not found');
+    }
+
+    if (index >= doc.nodes.length) {
+      throw Exception('Tried to access index $index in a document where the max index is ${doc.nodes.length - 1}');
+    }
+
+    final node = doc.nodes[index];
+    if (node is! NodeType) {
+      throw Exception('Tried to access a ${node.runtimeType} as $NodeType');
+    }
+
+    return node;
   }
 
   /// Finds the [DocumentLayout] that backs a [SuperEditor] in the widget tree.
