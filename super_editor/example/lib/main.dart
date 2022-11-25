@@ -16,6 +16,7 @@ import 'package:example/demos/flutter_features/textinputclient/textfield.dart';
 import 'package:example/demos/scrolling/demo_task_and_chat_with_customscrollview.dart';
 import 'package:example/demos/sliver_example_editor.dart';
 import 'package:example/demos/styles/demo_doc_styles.dart';
+import 'package:example/demos/super_document/demo_super_reader.dart';
 import 'package:example/demos/supertextfield/demo_textfield.dart';
 import 'package:example/demos/supertextfield/ios/demo_superiostextfield.dart';
 import 'package:example/logging.dart';
@@ -30,7 +31,6 @@ import 'demos/demo_document_loses_focus.dart';
 import 'demos/demo_switch_document_content.dart';
 import 'demos/super_document/demo_read_only_scrolling_document.dart';
 import 'demos/supertextfield/android/demo_superandroidtextfield.dart';
-import 'logging.dart';
 
 /// Demo of a basic text editor, as well as various widgets that
 /// are available in this package.
@@ -132,9 +132,12 @@ class _HomeScreenState extends State<HomeScreen> {
           OverlayEntry(builder: (context) {
             return Scaffold(
               key: _scaffoldKey,
-              appBar: _buildAppBar(context),
-              extendBodyBehindAppBar: true,
-              body: _selectedMenuItem!.pageBuilder(context),
+              body: Stack(
+                children: [
+                  _selectedMenuItem!.pageBuilder(context),
+                  _buildDrawerButton(),
+                ],
+              ),
               drawer: _buildDrawer(),
             );
           })
@@ -143,15 +146,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    return AppBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.menu),
-        color: Theme.of(context).colorScheme.onSurface,
-        splashRadius: 24,
-        onPressed: _toggleDrawer,
+  Widget _buildDrawerButton() {
+    return SafeArea(
+      child: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          height: 56,
+          width: 56,
+          child: IconButton(
+            icon: const Icon(Icons.menu),
+            color: Theme.of(context).colorScheme.onSurface,
+            splashRadius: 24,
+            onPressed: _toggleDrawer,
+          ),
+        ),
       ),
     );
   }
@@ -286,6 +294,13 @@ final _menu = <_MenuGroup>[
     items: [
       _MenuItem(
         icon: Icons.text_snippet,
+        title: 'SuperReader',
+        pageBuilder: (context) {
+          return SuperReaderDemo();
+        },
+      ),
+      _MenuItem(
+        icon: Icons.text_snippet,
         title: 'In CustomScrollView',
         pageBuilder: (context) {
           return ReadOnlyCustomScrollViewDemo();
@@ -295,7 +310,7 @@ final _menu = <_MenuGroup>[
   ),
   _MenuGroup(
     title: 'SCROLLING',
-    items: [      
+    items: [
       _MenuItem(
         icon: Icons.task,
         title: 'Task and Chat Demo - Slivers',

@@ -20,7 +20,6 @@ import 'package:super_editor/src/infrastructure/raw_key_event_extensions.dart';
 import 'package:super_editor/src/infrastructure/strings.dart';
 import 'package:super_text_layout/super_text_layout.dart';
 
-import 'document_input_keyboard.dart';
 import 'layout_single_column/layout_single_column.dart';
 import 'text_tools.dart';
 
@@ -98,6 +97,7 @@ class TextNode extends DocumentNode with ChangeNotifier {
     return TextNodeSelection(
       baseOffset: (base as TextNodePosition).offset,
       extentOffset: (extent as TextNodePosition).offset,
+      affinity: extent.affinity,
     );
   }
 
@@ -246,10 +246,10 @@ class TextNodeSelection extends TextSelection implements NodeSelection {
         );
 
   @override
-  TextNodePosition get base => TextNodePosition(offset: baseOffset);
+  TextNodePosition get base => TextNodePosition(offset: baseOffset, affinity: affinity);
 
   @override
-  TextNodePosition get extent => TextNodePosition(offset: extentOffset);
+  TextNodePosition get extent => TextNodePosition(offset: extentOffset, affinity: affinity);
 }
 
 /// A logical position within a [TextNode].
@@ -311,6 +311,8 @@ mixin TextComponentViewModel on SingleColumnLayoutComponentViewModel {
   @override
   void applyStyles(Map<String, dynamic> styles) {
     super.applyStyles(styles);
+
+    textAlignment = styles["textAlign"] ?? textAlignment;
 
     textStyleBuilder = (attributions) {
       final baseStyle = styles["textStyle"] ?? noStyleBuilder({});
@@ -457,21 +459,7 @@ class TextComponentState extends State<TextComponent> with DocumentComponent imp
     //   return null;
     // }
 
-    // Rework the textPosition so that it reports a "downstream" affinity because
-    // the editor doesn't support "upstream" positions, yet.
-    //
-    // Applying the "-1" to switch from upstream to downstream works everywhere, except
-    // when the position is at the very end of the text. In that case, we leave the offset
-    // alone.
-    return TextNodePosition.fromTextPosition(textPosition.affinity == TextAffinity.downstream
-        // The textPosition is already "downstream", leave it alone.
-        ? textPosition
-        // The textPosition if "upstream", adjust it to become "downstream", unless
-        // the position sits at the very end of the text.
-        : TextPosition(
-            offset: textPosition.offset < widget.text.text.length ? textPosition.offset - 1 : textPosition.offset,
-            affinity: TextAffinity.downstream,
-          ));
+    return TextNodePosition.fromTextPosition(textPosition);
   }
 
   @override
@@ -898,9 +886,17 @@ class AddTextAttributionsCommand implements EditorCommand {
         final node = entry.key;
         final range = entry.value.toSpanRange();
         editorDocLog.info(' - adding attribution: $attribution. Range: $range');
-        node.text.addAttribution(
-          attribution,
-          range,
+
+        // Create a new AttributedText with updated attribution spans, so that the presentation system can
+        // see that we made a change, and re-renders the text in the document.
+        node.text = AttributedText(
+          text: node.text.text,
+          spans: node.text.spans.copy()
+            ..addAttribution(
+              newAttribution: attribution,
+              start: range.start,
+              end: range.end,
+            ),
         );
       }
     }
@@ -986,9 +982,17 @@ class RemoveTextAttributionsCommand implements EditorCommand {
         final node = entry.key;
         final range = entry.value.toSpanRange();
         editorDocLog.info(' - removing attribution: $attribution. Range: $range');
-        node.text.removeAttribution(
-          attribution,
-          range,
+
+        // Create a new AttributedText with updated attribution spans, so that the presentation system can
+        // see that we made a change, and re-renders the text in the document.
+        node.text = AttributedText(
+          text: node.text.text,
+          spans: node.text.spans.copy()
+            ..removeAttribution(
+              attributionToRemove: attribution,
+              start: range.start,
+              end: range.end,
+            ),
         );
       }
     }
@@ -1084,9 +1088,17 @@ class ToggleTextAttributionsCommand implements EditorCommand {
         final node = entry.key;
         final range = entry.value;
         editorDocLog.info(' - toggling attribution: $attribution. Range: $range');
-        node.text.toggleAttribution(
-          attribution,
-          range,
+
+        // Create a new AttributedText with updated attribution spans, so that the presentation system can
+        // see that we made a change, and re-renders the text in the document.
+        node.text = AttributedText(
+          text: node.text.text,
+          spans: node.text.spans.copy()
+            ..toggleAttribution(
+              attribution: attribution,
+              start: range.start,
+              end: range.end,
+            ),
         );
       }
     }

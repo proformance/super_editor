@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'package:attributed_text/attributed_text.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:linkify/linkify.dart';
@@ -23,9 +22,7 @@ import 'package:super_editor/src/infrastructure/_logging.dart';
 import 'attributions.dart';
 import 'horizontal_rule.dart';
 import 'image.dart';
-import 'list_items.dart';
 import 'multi_node_editing.dart';
-import 'text.dart';
 import 'text_tools.dart';
 
 /// Performs common, high-level editing and composition tasks
@@ -37,12 +34,6 @@ import 'text_tools.dart';
 /// is built on top of [DocumentEditor], [DocumentLayout], and
 /// [DocumentComposer]. Use those core artifacts to implement any
 /// operations that are not supported by [CommonEditorOperations].
-///
-/// For example, compare the following [CommonEditorOperations] calls
-/// to their respective implementation:
-/// TODO: show 2-3 examples that compare the [CommonEditorOperations]
-///       call with the comparable implementation to make it clear
-///       that anything this class does, the developer can do directly.
 ///
 /// If you implement operations for your editor that are not provided
 /// by [CommonEditorOperations], consider implementing those operations
@@ -238,7 +229,7 @@ class CommonEditorOperations {
   /// change it's visual state when it's selected.
   /// {@endtemplate}
   ///
-  /// Expands/contracts the selection if [expand] is [true], otherwise
+  /// Expands/contracts the selection if [expand] is `true`, otherwise
   /// collapses the selection or keeps it collapsed.
   ///
   /// By default, moves one character at a time when the extent sits in
@@ -537,9 +528,9 @@ class CommonEditorOperations {
 
   /// Moves the [DocumentComposer]'s selection to the nearest node to [startingNode],
   /// whose [DocumentComponent] is visually selectable.
-  /// 
+  ///
   /// Expands the selection if [expand] is `true`, otherwise collapses the selection.
-  /// 
+  ///
   /// If a downstream selectable node if found, it will be used, otherwise,
   /// a upstream selectable node will be searched.
   ///
@@ -1116,14 +1107,14 @@ class CommonEditorOperations {
     if (baseNode == null) {
       throw Exception('Failed to _getDocumentPositionAfterDeletion because the base node no longer exists.');
     }
-    final baseNodeIndex = document.getNodeIndex(baseNode);
+    final baseNodeIndex = document.getNodeIndexById(baseNode.id);
 
     final extentPosition = selection.extent;
     final extentNode = document.getNode(extentPosition);
     if (extentNode == null) {
       throw Exception('Failed to _getDocumentPositionAfterDeletion because the extent node no longer exists.');
     }
-    final extentNodeIndex = document.getNodeIndex(extentNode);
+    final extentNodeIndex = document.getNodeIndexById(extentNode.id);
 
     final topNodeIndex = min(baseNodeIndex, extentNodeIndex);
     final topNode = document.getNodeAt(topNodeIndex)!;
@@ -1483,7 +1474,7 @@ class CommonEditorOperations {
       editorOpsLog.fine('Paragraph has an HR match');
       // Insert an HR before this paragraph and then clear the
       // paragraph's content.
-      final paragraphNodeIndex = editor.document.getNodeIndex(node);
+      final paragraphNodeIndex = editor.document.getNodeIndexById(node.id);
 
       editor.executeCommand(
         EditorCommandFunction((document, transaction) {
@@ -1695,7 +1686,9 @@ class CommonEditorOperations {
   /// Returns [true] if a new node was inserted or a node was split into two.
   /// Returns [false] if there was no selection.
   bool insertBlockLevelNewline() {
+    editorOpsLog.fine("Inserting block-level newline");
     if (composer.selection == null) {
+      editorOpsLog.finer("Selection is null. Can't insert newline.");
       return false;
     }
 
@@ -1703,12 +1696,14 @@ class CommonEditorOperations {
     final baseNode = editor.document.getNodeById(composer.selection!.base.nodeId)!;
     final extentNode = editor.document.getNodeById(composer.selection!.extent.nodeId)!;
     if (baseNode.id != extentNode.id) {
+      editorOpsLog.finer("The selection spans multiple nodes. Can't insert block-level newline.");
       return false;
     }
 
     if (!composer.selection!.isCollapsed) {
       // The selection is not collapsed. Delete the selected content first,
       // then continue the process.
+      editorOpsLog.finer("Deleting selection before inserting block-level newline");
       _deleteExpandedSelection();
     }
 
@@ -1717,10 +1712,13 @@ class CommonEditorOperations {
     if (extentNode is ListItemNode) {
       if (extentNode.text.text.isEmpty) {
         // The list item is empty. Convert it to a paragraph.
+        editorOpsLog.finer(
+            "The current node is an empty list item. Converting it to a paragraph instead of inserting block-level newline.");
         return convertToParagraph();
       }
 
       // Split the list item into two.
+      editorOpsLog.finer("Splitting list item in two.");
       editor.executeCommand(
         SplitListItemCommand(
           nodeId: extentNode.id,
@@ -1734,6 +1732,7 @@ class CommonEditorOperations {
       final currentExtentPosition = composer.selection!.extent.nodePosition as TextNodePosition;
       final endOfParagraph = extentNode.endPosition;
 
+      editorOpsLog.finer("Splitting paragraph in two.");
       editor.executeCommand(
         SplitParagraphCommand(
           nodeId: extentNode.id,
@@ -1747,6 +1746,7 @@ class CommonEditorOperations {
       if (extentPosition.affinity == TextAffinity.downstream) {
         // The caret sits on the downstream edge of block-level content. Insert
         // a new paragraph after this node.
+        editorOpsLog.finer("Inserting paragraph after block-level node.");
         editor.executeCommand(EditorCommandFunction((doc, transaction) {
           transaction.insertNodeAfter(
             existingNode: extentNode,
@@ -1759,6 +1759,7 @@ class CommonEditorOperations {
       } else {
         // The caret sits on the upstream edge of block-level content. Insert
         // a new paragraph before this node.
+        editorOpsLog.finer("Inserting paragraph before block-level node.");
         editor.executeCommand(EditorCommandFunction((doc, transaction) {
           transaction.insertNodeBefore(
             existingNode: extentNode,
@@ -1771,6 +1772,7 @@ class CommonEditorOperations {
       }
     } else {
       // We don't know how to handle this type of node position. Do nothing.
+      editorOpsLog.fine("Can't insert new block-level inline because we don't recognize the selected content type.");
       return false;
     }
 
