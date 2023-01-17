@@ -1,4 +1,3 @@
-import 'package:example/demos/example_editor/_task.dart';
 import 'package:example/logging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +29,9 @@ class _ExampleEditorState extends State<ExampleEditor> {
 
   final _darkBackground = const Color(0xFF222222);
   final _lightBackground = Colors.white;
-  bool _isLight = true;
+  Brightness _brightness = Brightness.light;
+
+  SuperEditorDebugVisualsConfig? _debugConfig;
 
   OverlayEntry? _textFormatBarOverlayEntry;
   final _textSelectionAnchor = ValueNotifier<Offset?>(null);
@@ -301,91 +302,135 @@ class _ExampleEditorState extends State<ExampleEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
+    return Theme(
+      data: ThemeData(brightness: _brightness),
+      child: Builder(builder: (themedContext) {
+        // This builder captures the new theme
+        return Stack(
           children: [
-            Expanded(
-              child: _buildEditor(),
+            Column(
+              children: [
+                Expanded(
+                  child: _buildEditor(themedContext),
+                ),
+                if (_isMobile) _buildMountedToolbar(),
+              ],
             ),
-            if (_isMobile) _buildMountedToolbar(),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: _buildCornerFabs(),
+            ),
           ],
-        ),
-        Align(
-          alignment: Alignment.bottomRight,
-          child: _buildLightAndDarkModeToggle(),
-        ),
-      ],
+        );
+      }),
     );
   }
 
-  Widget _buildLightAndDarkModeToggle() {
+  Widget _buildCornerFabs() {
     return Padding(
-      padding: const EdgeInsets.only(right: 16.0, bottom: 16.0),
-      child: FloatingActionButton(
-        backgroundColor: _isLight ? _darkBackground : _lightBackground,
-        foregroundColor: _isLight ? _lightBackground : _darkBackground,
-        elevation: 5,
-        onPressed: () {
-          setState(() {
-            _isLight = !_isLight;
-          });
-        },
-        child: _isLight
-            ? const Icon(
-                Icons.dark_mode,
-              )
-            : const Icon(
-                Icons.light_mode,
-              ),
+      padding: const EdgeInsets.only(right: 16, bottom: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildDebugVisualsToggle(),
+          const SizedBox(height: 16),
+          _buildLightAndDarkModeToggle(),
+        ],
       ),
     );
   }
 
-  Widget _buildEditor() {
+  Widget _buildDebugVisualsToggle() {
+    return FloatingActionButton(
+      backgroundColor: _brightness == Brightness.light ? _darkBackground : _lightBackground,
+      foregroundColor: _brightness == Brightness.light ? _lightBackground : _darkBackground,
+      elevation: 5,
+      onPressed: () {
+        setState(() {
+          _debugConfig = _debugConfig != null
+              ? null
+              : SuperEditorDebugVisualsConfig(
+                  showFocus: true,
+                  showImeConnection: true,
+                );
+        });
+      },
+      child: const Icon(
+        Icons.bug_report,
+      ),
+    );
+  }
+
+  Widget _buildLightAndDarkModeToggle() {
+    return FloatingActionButton(
+      backgroundColor: _brightness == Brightness.light ? _darkBackground : _lightBackground,
+      foregroundColor: _brightness == Brightness.light ? _lightBackground : _darkBackground,
+      elevation: 5,
+      onPressed: () {
+        setState(() {
+          _brightness = _brightness == Brightness.light ? Brightness.dark : Brightness.light;
+        });
+      },
+      child: _brightness == Brightness.light
+          ? const Icon(
+              Icons.dark_mode,
+            )
+          : const Icon(
+              Icons.light_mode,
+            ),
+    );
+  }
+
+  Widget _buildEditor(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return ColoredBox(
-      color: _isLight ? _lightBackground : _darkBackground,
-      child: SuperEditor(
-        editor: _docEditor,
-        composer: _composer,
-        focusNode: _editorFocusNode,
-        scrollController: _scrollController,
-        documentLayoutKey: _docLayoutKey,
-        documentOverlayBuilders: [
-          DefaultCaretOverlayBuilder(
-            CaretStyle().copyWith(color: _isLight ? Colors.black : Colors.redAccent),
-          ),
-        ],
-        selectionStyle: _isLight
-            ? defaultSelectionStyle
-            : SelectionStyles(
-                selectionColor: Colors.red.withOpacity(0.3),
-              ),
-        stylesheet: defaultStylesheet.copyWith(
-          addRulesAfter: [
-            if (!_isLight) ..._darkModeStyles,
-            taskStyles,
+      color: isLight ? _lightBackground : _darkBackground,
+      child: SuperEditorDebugVisuals(
+        config: _debugConfig ?? const SuperEditorDebugVisualsConfig(),
+        child: SuperEditor(
+          editor: _docEditor,
+          composer: _composer,
+          focusNode: _editorFocusNode,
+          scrollController: _scrollController,
+          documentLayoutKey: _docLayoutKey,
+          documentOverlayBuilders: [
+            DefaultCaretOverlayBuilder(
+              CaretStyle().copyWith(color: isLight ? Colors.black : Colors.redAccent),
+            ),
           ],
+          selectionStyle: isLight
+              ? defaultSelectionStyle
+              : SelectionStyles(
+                  selectionColor: Colors.red.withOpacity(0.3),
+                ),
+          stylesheet: defaultStylesheet.copyWith(
+            addRulesAfter: [
+              if (!isLight) ..._darkModeStyles,
+              taskStyles,
+            ],
+          ),
+          componentBuilders: [
+            TaskComponentBuilder(_docEditor),
+            ...defaultComponentBuilders,
+          ],
+          gestureMode: _gestureMode,
+          inputSource: _inputSource,
+          keyboardActions: _inputSource == TextInputSource.ime ? defaultImeKeyboardActions : defaultKeyboardActions,
+          androidToolbarBuilder: (_) => AndroidTextEditingFloatingToolbar(
+            onCutPressed: _cut,
+            onCopyPressed: _copy,
+            onPastePressed: _paste,
+            onSelectAllPressed: _selectAll,
+          ),
+          iOSToolbarBuilder: (_) => IOSTextEditingFloatingToolbar(
+            onCutPressed: _cut,
+            onCopyPressed: _copy,
+            onPastePressed: _paste,
+          ),
+          overlayController: _overlayController,
         ),
-        componentBuilders: [
-          ...defaultComponentBuilders,
-          TaskComponentBuilder(_docEditor),
-        ],
-        gestureMode: _gestureMode,
-        inputSource: _inputSource,
-        keyboardActions: _inputSource == TextInputSource.ime ? defaultImeKeyboardActions : defaultKeyboardActions,
-        androidToolbarBuilder: (_) => AndroidTextEditingFloatingToolbar(
-          onCutPressed: _cut,
-          onCopyPressed: _copy,
-          onPastePressed: _paste,
-          onSelectAllPressed: _selectAll,
-        ),
-        iOSToolbarBuilder: (_) => IOSTextEditingFloatingToolbar(
-          onCutPressed: _cut,
-          onCopyPressed: _copy,
-          onPastePressed: _paste,
-        ),
-        overlayController: _overlayController,
       ),
     );
   }

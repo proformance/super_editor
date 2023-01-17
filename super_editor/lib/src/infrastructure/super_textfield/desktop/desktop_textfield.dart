@@ -192,7 +192,9 @@ class SuperDesktopTextFieldState extends State<SuperDesktopTextField> implements
     if (widget.focusNode == null) {
       _focusNode.dispose();
     }
-    _controller.removeListener(_onSelectionOrContentChange);
+    _controller
+      ..removeListener(_onSelectionOrContentChange)
+      ..detachFromIme();
     if (widget.textController == null) {
       _controller.dispose();
     }
@@ -774,6 +776,7 @@ class _SuperTextFieldGestureInteractorState extends State<SuperTextFieldGestureI
 
   @override
   Widget build(BuildContext context) {
+    final gestureSettings = MediaQuery.maybeOf(context)?.gestureSettings;
     return Listener(
       onPointerSignal: _onPointerSignal,
       child: GestureDetector(
@@ -789,7 +792,8 @@ class _SuperTextFieldGestureInteractorState extends State<SuperTextFieldGestureI
                   ..onDoubleTapDown = _onDoubleTapDown
                   ..onDoubleTap = _onDoubleTap
                   ..onTripleTapDown = _onTripleTapDown
-                  ..onTripleTap = _onTripleTap;
+                  ..onTripleTap = _onTripleTap
+                  ..gestureSettings = gestureSettings;
               },
             ),
             PanGestureRecognizer: GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
@@ -799,7 +803,8 @@ class _SuperTextFieldGestureInteractorState extends State<SuperTextFieldGestureI
                   ..onStart = _onPanStart
                   ..onUpdate = _onPanUpdate
                   ..onEnd = _onPanEnd
-                  ..onCancel = _onPanCancel;
+                  ..onCancel = _onPanCancel
+                  ..gestureSettings = gestureSettings;
               },
             ),
           },
@@ -1437,6 +1442,7 @@ const defaultTextFieldImeKeyboardHandlers = <TextFieldKeyboardHandler>[
   DefaultSuperTextFieldKeyboardHandlers.deleteWordWhenCtlBackSpaceIsPressedOnWindowsAndLinux,
   DefaultSuperTextFieldKeyboardHandlers.deleteTextOnLineBeforeCaretWhenShortcutKeyAndBackspaceIsPressed,
   DefaultSuperTextFieldKeyboardHandlers.deleteTextWhenBackspaceOrDeleteIsPressed,
+  DefaultSuperTextFieldKeyboardHandlers.insertNewlineWhenEnterIsPressed,
 ];
 
 class DefaultSuperTextFieldKeyboardHandlers {

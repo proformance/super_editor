@@ -10,10 +10,12 @@ import 'package:super_editor/src/core/document_layout.dart';
 import 'package:super_editor/src/core/edit_context.dart';
 import 'package:super_editor/src/core/styles.dart';
 import 'package:super_editor/src/default_editor/common_editor_operations.dart';
+import 'package:super_editor/src/default_editor/debug_visualization.dart';
 import 'package:super_editor/src/default_editor/document_gestures_touch_android.dart';
 import 'package:super_editor/src/default_editor/document_gestures_touch_ios.dart';
 import 'package:super_editor/src/default_editor/document_scrollable.dart';
 import 'package:super_editor/src/default_editor/list_items.dart';
+import 'package:super_editor/src/default_editor/tasks.dart';
 import 'package:super_editor/src/infrastructure/platforms/ios/ios_document_controls.dart';
 import 'package:super_editor/src/infrastructure/text_input.dart';
 import 'package:super_text_layout/super_text_layout.dart';
@@ -23,9 +25,9 @@ import 'attributions.dart';
 import 'blockquote.dart';
 import 'document_caret_overlay.dart';
 import 'document_gestures_mouse.dart';
-import 'document_input_ime.dart';
-import 'document_input_keyboard.dart';
-import 'document_keyboard_actions.dart';
+import 'document_ime/document_input_ime.dart';
+import 'document_hardware_keyboard/document_input_keyboard.dart';
+import 'document_focus_and_selection_policies.dart';
 import 'horizontal_rule.dart';
 import 'image.dart';
 import 'layout_single_column/layout_single_column.dart';
@@ -53,8 +55,11 @@ import 'unknown_component.dart';
 ///    selected text and components
 ///
 /// A [SuperEditor] determines how a physical keyboard interacts with the document
-/// by way of [keyboardActions]. Software keyboards are integrated with the
-/// [softwareKeyboardHandler].
+/// by way of [keyboardActions].
+///
+/// A [SuperEditor] works with software keyboards through the platform's Input Method
+/// Engine (IME). To customize how [SuperEditor] works with the IME, see [imePolicies],
+/// [imeConfiguration], and [softwareKeyboardController].
 ///
 /// ## Deeper explanation of core artifacts:
 ///
@@ -75,67 +80,6 @@ import 'unknown_component.dart';
 /// Document composer is responsible for owning document selection and
 /// the current text entry mode.
 class SuperEditor extends StatefulWidget {
-  @Deprecated("Use unnamed SuperEditor() constructor instead")
-  SuperEditor.standard({
-    Key? key,
-    this.focusNode,
-    required this.editor,
-    this.composer,
-    this.scrollController,
-    this.documentLayoutKey,
-    Stylesheet? stylesheet,
-    this.customStylePhases = const [],
-    this.inputSource = TextInputSource.keyboard,
-    this.gestureMode = DocumentGestureMode.mouse,
-    this.androidHandleColor,
-    this.androidToolbarBuilder,
-    this.iOSHandleColor,
-    this.iOSToolbarBuilder,
-    this.createOverlayControlsClipper,
-    this.debugPaint = const DebugPaintConfig(),
-    this.autofocus = false,
-    this.overlayController,
-  })  : componentBuilders = defaultComponentBuilders,
-        keyboardActions = defaultKeyboardActions,
-        softwareKeyboardHandler = null,
-        stylesheet = stylesheet ?? defaultStylesheet,
-        selectionStyles = defaultSelectionStyle,
-        documentOverlayBuilders = [const DefaultCaretOverlayBuilder()],
-        super(key: key);
-
-  @Deprecated("Use unnamed SuperEditor() constructor instead")
-  SuperEditor.custom({
-    Key? key,
-    this.focusNode,
-    required this.editor,
-    this.composer,
-    this.scrollController,
-    this.documentLayoutKey,
-    Stylesheet? stylesheet,
-    this.customStylePhases = const [],
-    List<ComponentBuilder>? componentBuilders,
-    SelectionStyles? selectionStyle,
-    this.inputSource = TextInputSource.keyboard,
-    this.gestureMode = DocumentGestureMode.mouse,
-    List<DocumentKeyboardAction>? keyboardActions,
-    this.softwareKeyboardHandler,
-    this.androidHandleColor,
-    this.androidToolbarBuilder,
-    this.iOSHandleColor,
-    this.iOSToolbarBuilder,
-    this.createOverlayControlsClipper,
-    this.debugPaint = const DebugPaintConfig(),
-    this.autofocus = false,
-    this.overlayController,
-  })  : stylesheet = stylesheet ?? defaultStylesheet,
-        selectionStyles = selectionStyle ?? defaultSelectionStyle,
-        keyboardActions = keyboardActions ?? defaultKeyboardActions,
-        documentOverlayBuilders = [const DefaultCaretOverlayBuilder()],
-        componentBuilders = componentBuilders != null
-            ? [...componentBuilders, const UnknownComponentBuilder()]
-            : [...defaultComponentBuilders, const UnknownComponentBuilder()],
-        super(key: key);
-
   /// Creates a `Super Editor` with common (but configurable) defaults for
   /// visual components, text styles, and user interaction.
   SuperEditor({
@@ -149,10 +93,14 @@ class SuperEditor extends StatefulWidget {
     this.customStylePhases = const [],
     List<ComponentBuilder>? componentBuilders,
     SelectionStyles? selectionStyle,
+    this.selectionPolicies = const SuperEditorSelectionPolicies(),
     this.inputSource,
-    this.gestureMode,
+    this.softwareKeyboardController,
+    this.imePolicies = const SuperEditorImePolicies(),
+    this.imeConfiguration = const SuperEditorImeConfiguration(),
+    this.imeOverrides,
     List<DocumentKeyboardAction>? keyboardActions,
-    this.softwareKeyboardHandler,
+    this.gestureMode,
     this.androidHandleColor,
     this.androidToolbarBuilder,
     this.iOSHandleColor,
@@ -199,6 +147,10 @@ class SuperEditor extends StatefulWidget {
   /// Styles applied to selected content.
   final SelectionStyles selectionStyles;
 
+  /// Policies that determine how selection is modified by other factors, such as
+  /// gaining or losing focus.
+  final SuperEditorSelectionPolicies selectionPolicies;
+
   /// Custom style phases that are added to the standard style phases.
   ///
   /// Documents are styled in a series of phases. A number of such
@@ -219,6 +171,35 @@ class SuperEditor extends StatefulWidget {
 
   /// The `SuperEditor` input source, e.g., keyboard or Input Method Engine.
   final TextInputSource? inputSource;
+
+  /// Opens and closes the software keyboard.
+  ///
+  /// Typically, this controller should only be used when the keyboard is configured
+  /// for manual control, e.g., [SuperEditorImePolicies.openKeyboardOnSelectionChange] and
+  /// [SuperEditorImePolicies.clearSelectionWhenEditorLosesFocus] are `false`. Otherwise,
+  /// the automatic behavior might conflict with commands to this controller.
+  final SoftwareKeyboardController? softwareKeyboardController;
+
+  /// Policies that dictate when and how [SuperEditor] should interact with the
+  /// platform IME, such as automatically opening the software keyboard when
+  /// [SuperEditor]'s selection changes.
+  final SuperEditorImePolicies imePolicies;
+
+  /// Preferences for how the platform IME should look and behave during editing.
+  final SuperEditorImeConfiguration imeConfiguration;
+
+  /// Overrides for IME actions.
+  ///
+  /// When the user edits document content in IME mode, those edits and actions
+  /// are reported to a [DeltaTextInputClient], which is then responsible for
+  /// applying those changes to a document. [SuperEditor] includes an implementation
+  /// for all relevant editing behaviors. However, some apps may wish to implement
+  /// their own custom behavior, such as when the user presses the action button,
+  /// such as "Next" or "Done".
+  ///
+  /// Provide a [DeltaTextInputClientDecorator], to override the default [SuperEditor]
+  /// behaviors for various IME messages.
+  final DeltaTextInputClientDecorator? imeOverrides;
 
   /// The `SuperEditor` gesture mode, e.g., mouse or touch.
   final DocumentGestureMode? gestureMode;
@@ -268,11 +249,6 @@ class SuperEditor extends StatefulWidget {
   /// mode.
   final List<DocumentKeyboardAction> keyboardActions;
 
-  /// Applies all software keyboard edits to the document.
-  ///
-  /// This handler is only used when in [TextInputSource.ime] mode.
-  final SoftwareKeyboardHandler? softwareKeyboardHandler;
-
   /// Paints some extra visual ornamentation to help with
   /// debugging.
   final DebugPaintConfig debugPaint;
@@ -302,7 +278,7 @@ class SuperEditorState extends State<SuperEditor> {
 
   @visibleForTesting
   late EditContext editContext;
-  late SoftwareKeyboardHandler _softwareKeyboardHandler;
+
   final _floatingCursorController = FloatingCursorController();
 
   @visibleForTesting
@@ -323,13 +299,6 @@ class SuperEditorState extends State<SuperEditor> {
 
     _createEditContext();
     _createLayoutPresenter();
-
-    _softwareKeyboardHandler = widget.softwareKeyboardHandler ??
-        SoftwareKeyboardHandler(
-          editor: editContext.editor,
-          composer: editContext.composer,
-          commonOps: editContext.commonOps,
-        );
   }
 
   @override
@@ -341,25 +310,20 @@ class SuperEditorState extends State<SuperEditor> {
       _composer = widget.composer ?? DocumentComposer();
       _composer.addListener(_updateComposerPreferencesAtSelection);
     }
+
     if (widget.editor != oldWidget.editor) {
       // The content displayed in this Editor was switched
       // out. Remove any content selection from the previous
       // document.
       _composer.selection = null;
     }
+
     if (widget.focusNode != oldWidget.focusNode) {
       _focusNode = (widget.focusNode ?? FocusNode())..addListener(_onFocusChange);
     }
+
     if (widget.documentLayoutKey != oldWidget.documentLayoutKey) {
       _docLayoutKey = widget.documentLayoutKey ?? GlobalKey();
-    }
-    if (widget.softwareKeyboardHandler != oldWidget.softwareKeyboardHandler) {
-      _softwareKeyboardHandler = widget.softwareKeyboardHandler ??
-          SoftwareKeyboardHandler(
-            editor: editContext.editor,
-            composer: editContext.composer,
-            commonOps: editContext.commonOps,
-          );
     }
 
     if (widget.editor != oldWidget.editor) {
@@ -442,8 +406,7 @@ class SuperEditorState extends State<SuperEditor> {
   }
 
   void _recomputeIfLayoutShouldShowCaret() {
-    _docLayoutSelectionStyler.shouldDocumentShowCaret =
-        _focusNode.hasFocus && _gestureMode == DocumentGestureMode.mouse;
+    _docLayoutSelectionStyler.shouldDocumentShowCaret = _focusNode.hasFocus && gestureMode == DocumentGestureMode.mouse;
   }
 
   void _updateComposerPreferencesAtSelection() {
@@ -490,7 +453,8 @@ class SuperEditorState extends State<SuperEditor> {
     }
   }
 
-  DocumentGestureMode get _gestureMode {
+  @visibleForTesting
+  DocumentGestureMode get gestureMode {
     if (widget.gestureMode != null) {
       return widget.gestureMode!;
     }
@@ -508,7 +472,8 @@ class SuperEditorState extends State<SuperEditor> {
   ///
   /// If the `inputSource` is configured, it is used. Otherwise,
   /// the [TextInputSource] is chosen based on the platform.
-  TextInputSource get _inputSource {
+  @visibleForTesting
+  TextInputSource get inputSource {
     if (widget.inputSource != null) {
       return widget.inputSource!;
     }
@@ -523,13 +488,24 @@ class SuperEditorState extends State<SuperEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return _buildInputSystem(
-      child: _buildGestureSystem(
-        documentLayout: SingleColumnDocumentLayout(
-          key: _docLayoutKey,
-          presenter: _docLayoutPresenter!,
-          componentBuilders: widget.componentBuilders,
-          showDebugPaint: widget.debugPaint.layout,
+    return SuperEditorFocusDebugVisuals(
+      focusNode: _focusNode,
+      child: EditorSelectionAndFocusPolicy(
+        focusNode: _focusNode,
+        selection: _composer.selectionNotifier,
+        getDocumentLayout: () => editContext.documentLayout,
+        placeCaretAtEndOfDocumentOnGainFocus: widget.selectionPolicies.placeCaretAtEndOfDocumentOnGainFocus,
+        restorePreviousSelectionOnGainFocus: widget.selectionPolicies.restorePreviousSelectionOnGainFocus,
+        clearSelectionWhenEditorLosesFocus: widget.selectionPolicies.clearSelectionWhenEditorLosesFocus,
+        child: _buildInputSystem(
+          child: _buildGestureSystem(
+            documentLayout: SingleColumnDocumentLayout(
+              key: _docLayoutKey,
+              presenter: _docLayoutPresenter!,
+              componentBuilders: widget.componentBuilders,
+              showDebugPaint: widget.debugPaint.layout,
+            ),
+          ),
         ),
       ),
     );
@@ -540,9 +516,9 @@ class SuperEditorState extends State<SuperEditor> {
   Widget _buildInputSystem({
     required Widget child,
   }) {
-    switch (_inputSource) {
+    switch (inputSource) {
       case TextInputSource.keyboard:
-        return DocumentKeyboardInteractor(
+        return SuperEditorHardwareKeyHandler(
           focusNode: _focusNode,
           autofocus: widget.autofocus,
           editContext: editContext,
@@ -550,11 +526,15 @@ class SuperEditorState extends State<SuperEditor> {
           child: child,
         );
       case TextInputSource.ime:
-        return DocumentImeInteractor(
+        return SuperEditorImeInteractor(
           focusNode: _focusNode,
           autofocus: widget.autofocus,
           editContext: editContext,
-          softwareKeyboardHandler: _softwareKeyboardHandler,
+          clearSelectionWhenImeConnectionCloses: widget.selectionPolicies.clearSelectionWhenImeConnectionCloses,
+          softwareKeyboardController: widget.softwareKeyboardController,
+          imePolicies: widget.imePolicies,
+          imeConfiguration: widget.imeConfiguration,
+          imeOverrides: widget.imeOverrides,
           hardwareKeyboardActions: widget.keyboardActions,
           floatingCursorController: _floatingCursorController,
           child: child,
@@ -568,7 +548,7 @@ class SuperEditorState extends State<SuperEditor> {
   Widget _buildGestureSystem({
     required Widget documentLayout,
   }) {
-    switch (_gestureMode) {
+    switch (gestureMode) {
       case DocumentGestureMode.mouse:
         return _buildDesktopGestureSystem(documentLayout);
       case DocumentGestureMode.android:
@@ -665,6 +645,67 @@ class SuperEditorState extends State<SuperEditor> {
   }
 }
 
+/// A collection of policies that dictate how a [SuperEditor]'s selection will change
+/// based on other behaviors, such as focus changes.
+class SuperEditorSelectionPolicies {
+  const SuperEditorSelectionPolicies({
+    this.placeCaretAtEndOfDocumentOnGainFocus = true,
+    this.restorePreviousSelectionOnGainFocus = true,
+    this.clearSelectionWhenEditorLosesFocus = true,
+    this.clearSelectionWhenImeConnectionCloses = true,
+  });
+
+  /// Whether the editor should automatically place the caret at the end of the document,
+  /// if the editor receives focus without an existing selection.
+  ///
+  /// [restorePreviousSelectionOnGainFocus] takes priority over this policy.
+  final bool placeCaretAtEndOfDocumentOnGainFocus;
+
+  /// Whether the editor's previous selection should be restored when the editor re-gains
+  /// focus, after having previous lost focus.
+  final bool restorePreviousSelectionOnGainFocus;
+
+  /// Whether the editor's selection should be removed when the editor loses
+  /// all focus (not just primary focus).
+  ///
+  /// If `true`, when focus moves to a different subtree, such as a popup text
+  /// field, or a button somewhere else on the screen, the editor will remove
+  /// its selection. When focus returns to the editor, the previous selection can
+  /// be restored, but that's controlled by other policies.
+  ///
+  /// If `false`, the editor will retain its selection, including a visual caret
+  /// and selected content, even when the editor doesn't have any focus, and can't
+  /// process any input.
+  final bool clearSelectionWhenEditorLosesFocus;
+
+  /// Whether the editor's selection should be removed when the editor closes or loses
+  /// its IME connection.
+  ///
+  /// Defaults to `true`.
+  ///
+  /// Apps that include a custom input mode, such as an editing panel that sometimes
+  /// replaces the software keyboard, should set this to `false` and instead control the
+  /// IME connection manually.
+  final bool clearSelectionWhenImeConnectionCloses;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SuperEditorSelectionPolicies &&
+          runtimeType == other.runtimeType &&
+          placeCaretAtEndOfDocumentOnGainFocus == other.placeCaretAtEndOfDocumentOnGainFocus &&
+          restorePreviousSelectionOnGainFocus == other.restorePreviousSelectionOnGainFocus &&
+          clearSelectionWhenEditorLosesFocus == other.clearSelectionWhenEditorLosesFocus &&
+          clearSelectionWhenImeConnectionCloses == other.clearSelectionWhenImeConnectionCloses;
+
+  @override
+  int get hashCode =>
+      placeCaretAtEndOfDocumentOnGainFocus.hashCode ^
+      restorePreviousSelectionOnGainFocus.hashCode ^
+      clearSelectionWhenEditorLosesFocus.hashCode ^
+      clearSelectionWhenImeConnectionCloses.hashCode;
+}
+
 /// Builds widgets that are displayed at the same position and size as
 /// the document layout within a [SuperEditor].
 abstract class DocumentLayerBuilder {
@@ -736,6 +777,7 @@ final defaultKeyboardActions = <DocumentKeyboardAction>[
   cmdBToToggleBold,
   cmdIToToggleItalics,
   shiftEnterToInsertNewlineInBlock,
+  enterToInsertNewTask,
   enterToInsertBlockNewline,
   backspaceToRemoveUpstreamContent,
   deleteToRemoveDownstreamContent,
@@ -761,6 +803,8 @@ final defaultImeKeyboardActions = <DocumentKeyboardAction>[
   moveUpDownLeftAndRightWithArrowKeys,
   moveToLineStartWithHome,
   moveToLineEndWithEnd,
+  enterToInsertNewTask,
+  enterToInsertBlockNewline,
   tabToIndentListItem,
   shiftTabToUnIndentListItem,
   backspaceToUnIndentListItem,

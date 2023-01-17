@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:super_editor/src/infrastructure/attributed_text_styles.dart';
+import 'package:super_editor/src/infrastructure/ime_input_owner.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/android/android_textfield.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/desktop/desktop_textfield.dart';
 import 'package:super_editor/src/infrastructure/super_textfield/infrastructure/attributed_text_editing_controller.dart';
@@ -65,8 +66,9 @@ class SuperTextField extends StatefulWidget {
     this.maxLines = 1,
     this.lineHeight,
     this.inputSource,
-    this.keyboardHandlers = defaultTextFieldKeyboardHandlers,
+    this.keyboardHandlers,
     this.padding,
+    this.textInputAction,
   }) : super(key: key);
 
   final FocusNode? focusNode;
@@ -155,17 +157,25 @@ class SuperTextField extends StatefulWidget {
   /// key presses, for text input, deletion, caret movement, etc.
   ///
   /// Only used on desktop.
-  final List<TextFieldKeyboardHandler> keyboardHandlers;
+  final List<TextFieldKeyboardHandler>? keyboardHandlers;
 
   /// Padding placed around the text content of this text field, but within the
   /// scrollable viewport.
   final EdgeInsets? padding;
 
+  /// The main action for the virtual keyboard, e.g. [TextInputAction.done].
+  ///
+  /// When `null`, and in single-line mode, the action will be [TextInputAction.done],
+  /// and when in multi-line mode, the action will be  [TextInputAction.newline].
+  ///
+  /// Only used on mobile.
+  final TextInputAction? textInputAction;
+
   @override
   State<SuperTextField> createState() => SuperTextFieldState();
 }
 
-class SuperTextFieldState extends State<SuperTextField> {
+class SuperTextFieldState extends State<SuperTextField> implements ImeInputOwner {
   final _platformFieldKey = GlobalKey();
   late ImeAttributedTextEditingController _controller;
 
@@ -199,7 +209,24 @@ class SuperTextFieldState extends State<SuperTextField> {
   @visibleForTesting
   ProseTextLayout get textLayout => (_platformFieldKey.currentState as ProseTextBlock).textLayout;
 
+  @visibleForTesting
+  @override
+  DeltaTextInputClient get imeClient {
+    switch (_configuration) {
+      case SuperTextFieldPlatformConfiguration.desktop:
+        // ignore: invalid_use_of_visible_for_testing_member
+        return (_platformFieldKey.currentState as SuperDesktopTextFieldState).imeClient;
+      case SuperTextFieldPlatformConfiguration.android:
+        return (_platformFieldKey.currentState as SuperAndroidTextFieldState).imeClient;
+      case SuperTextFieldPlatformConfiguration.iOS:
+        return (_platformFieldKey.currentState as SuperIOSTextFieldState).imeClient;
+    }
+  }
+
   bool get _isMultiline => (widget.minLines ?? 1) != 1 || widget.maxLines != 1;
+
+  TextInputAction get _textInputAction =>
+      widget.textInputAction ?? (_isMultiline ? TextInputAction.newline : TextInputAction.done);
 
   SuperTextFieldPlatformConfiguration get _configuration {
     if (widget.configuration != null) {
@@ -302,7 +329,7 @@ class SuperTextFieldState extends State<SuperTextField> {
             minLines: widget.minLines,
             maxLines: widget.maxLines,
             lineHeight: widget.lineHeight,
-            textInputAction: _isMultiline ? TextInputAction.newline : TextInputAction.done,
+            textInputAction: _textInputAction,
             padding: widget.padding,
           ),
         );
@@ -326,7 +353,7 @@ class SuperTextFieldState extends State<SuperTextField> {
             minLines: widget.minLines,
             maxLines: widget.maxLines,
             lineHeight: widget.lineHeight,
-            textInputAction: _isMultiline ? TextInputAction.newline : TextInputAction.done,
+            textInputAction: _textInputAction,
             padding: widget.padding,
           ),
         );

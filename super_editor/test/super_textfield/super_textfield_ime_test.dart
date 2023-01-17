@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide SelectableText;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_test_robots/flutter_test_robots.dart';
 import 'package:super_editor/super_editor.dart';
@@ -173,6 +174,52 @@ void main() {
         });
       });
     });
+
+    testWidgetsOnMobile('configures the software keyboard action button', (tester) async {
+      await tester.pumpWidget(
+        _buildScaffold(
+          child: const SuperTextField(
+            textInputAction: TextInputAction.next,
+          ),
+        ),
+      );
+
+      // Holds the keyboard input action sent to the platform.
+      String? inputAction;
+
+      // Intercept messages sent to the platform.
+      tester.binding.defaultBinaryMessenger.setMockMessageHandler(SystemChannels.textInput.name, (message) async {
+        final methodCall = const JSONMethodCodec().decodeMethodCall(message);
+        if (methodCall.method == 'TextInput.setClient') {
+          final params = methodCall.arguments[1] as Map;
+          inputAction = params['inputAction'];
+        }
+        return null;
+      });
+
+      // Tap the text field to show the software keyboard.
+      await tester.placeCaretInSuperTextField(0);
+
+      // Ensure the given TextInputAction was applied.
+      expect(inputAction, 'TextInputAction.next');
+    });
+
+    testWidgetsOnAllPlatforms('disconnects from IME when disposed', (tester) async {
+      final controller = ImeAttributedTextEditingController();
+      await _pumpSuperTextField(tester, controller);
+
+      // Place the caret to open an IME connection.
+      await tester.placeCaretInSuperTextField(0);
+
+      // Ensure the IME connection is open.
+      expect(controller.isAttachedToIme, isTrue);
+
+      // Pump a different tree to cause the text field to dispose.
+      await tester.pumpWidget(const MaterialApp());
+
+      // Ensure the IME connection is closed.
+      expect(controller.isAttachedToIme, isFalse);
+    });
   });
 
   group('SuperTextField on some bad Android software keyboards', () {
@@ -298,6 +345,19 @@ Future<void> _pumpScaffoldForBuggyKeyboards(
             textController: controller,
           ),
         ),
+      ),
+    ),
+  );
+}
+
+Widget _buildScaffold({
+  required Widget child,
+}) {
+  return MaterialApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: 300,
+        child: child,
       ),
     ),
   );
