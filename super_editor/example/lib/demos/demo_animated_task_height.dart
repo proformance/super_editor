@@ -117,66 +117,69 @@ class _AnimatedTaskComponentState extends State<_AnimatedTaskComponent>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 16, right: 4),
-              child: Checkbox(
-                value: widget.viewModel.isComplete,
-                onChanged: (newValue) {
-                  widget.viewModel.setComplete(newValue!);
-                },
+    return Container(
+      color: widget.viewModel.selection != null ? Colors.lightBlue : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 4),
+                child: Checkbox(
+                  value: widget.viewModel.isComplete,
+                  onChanged: (newValue) {
+                    widget.viewModel.setComplete(newValue!);
+                  },
+                ),
               ),
-            ),
-            Expanded(
-              child: TextComponent(
-                key: _textKey,
-                text: widget.viewModel.text,
-                textStyleBuilder: (attributions) {
-                  // Show a strikethrough across the entire task if it's complete.
-                  final style = widget.viewModel.textStyleBuilder(attributions);
-                  return widget.viewModel.isComplete
-                      ? style.copyWith(
-                          decoration: style.decoration == null
-                              ? TextDecoration.lineThrough
-                              : TextDecoration.combine([TextDecoration.lineThrough, style.decoration!]),
-                        )
-                      : style;
-                },
-                textSelection: widget.viewModel.selection,
-                selectionColor: widget.viewModel.selectionColor,
-                highlightWhenEmpty: widget.viewModel.highlightWhenEmpty,
-                showDebugPaint: widget.showDebugPaint,
+              Expanded(
+                child: TextComponent(
+                  key: _textKey,
+                  text: widget.viewModel.text,
+                  textStyleBuilder: (attributions) {
+                    // Show a strikethrough across the entire task if it's complete.
+                    final style = widget.viewModel.textStyleBuilder(attributions);
+                    return widget.viewModel.isComplete
+                        ? style.copyWith(
+                            decoration: style.decoration == null
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.combine([TextDecoration.lineThrough, style.decoration!]),
+                          )
+                        : style;
+                  },
+                  textSelection: widget.viewModel.selection,
+                  selectionColor: widget.viewModel.selectionColor,
+                  highlightWhenEmpty: widget.viewModel.highlightWhenEmpty,
+                  showDebugPaint: widget.showDebugPaint,
+                ),
               ),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 56),
-          child: SizeChangedLayoutNotifier(
-            child: AnimatedSize(
-              key: _animatedSizeKey,
-              duration: const Duration(milliseconds: 100),
-              child: widget.viewModel.selection != null
-                  ? SizedBox(
-                      height: 20,
-                      child: Row(
-                        children: [
-                          Icon(Icons.label_important_outline, size: 16),
-                          const SizedBox(width: 4),
-                          Icon(Icons.timelapse_sharp, size: 16),
-                        ],
-                      ),
-                    )
-                  : const SizedBox.shrink(),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 56),
+            child: SizeChangedLayoutNotifier(
+              child: AnimatedSize(
+                key: _animatedSizeKey,
+                duration: const Duration(milliseconds: 100),
+                child: widget.viewModel.selection != null
+                    ? SizedBox(
+                        height: 20,
+                        child: Row(
+                          children: [
+                            Icon(Icons.label_important_outline, size: 16),
+                            const SizedBox(width: 4),
+                            Icon(Icons.timelapse_sharp, size: 16),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
